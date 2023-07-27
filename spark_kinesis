@@ -1,0 +1,37 @@
+# Databricks notebook source
+import pyspark
+from pyspark.sql import SparkSession
+from pyspark.sql.types import *
+from pyspark.sql.functions import *
+from pyspark.sql.streaming import *
+
+# COMMAND ----------
+
+
+kinesisStreamName = "Name of the stream"
+kinesisRegion = 'us-east-1'
+kinesisDF = spark \
+  .readStream \
+  .format("kinesis") \
+  .option("streamName", kinesisStreamName) \
+  .option("region", kinesisRegion) \
+  .option("roleArn", "ARN of the kinesis stream") \
+  .option("initialPosition", 'latest') \
+  .option("kinesisEndpointUrl", "VPC endpoint") \
+  .option("format", "json") \
+  .option("multiline", "true") \
+  .option("mode", "PERMISSIVE") \
+  .load()
+
+# COMMAND ----------
+
+newDF = kinesisDF.selectExpr("CAST(data as STRING) as json", "approximateArrivalTimestamp as kinesis_arrival_time", "current_date() as lake_arrival_date")
+
+# COMMAND ----------
+
+checkpointPath = "s3 URI"
+
+# COMMAND ----------
+
+#Writing raw data to S3 bronze layer - delta lake
+lake_raw = newDF.writeStream.format("delta").outputMode("append").partitionBy("lake_arrival_date").option("checkpointLocation", checkpointPath).start("S3 URI")
